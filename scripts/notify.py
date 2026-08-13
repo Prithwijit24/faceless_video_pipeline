@@ -1,7 +1,7 @@
 """
 Step 6 (final): Ping you that the video is ready by sending it directly
 via a free Telegram bot (works for clips under ~49MB, which covers
-virtually every 45-75s faceless reel).
+virtually every 35-40s faceless reel).
 
 Create a bot for free via @BotFather on Telegram, then message your new
 bot once so it can message you back, and grab your chat id from

@@ -1,12 +1,12 @@
 # Faceless Reel Pipeline (free, plug-and-play, 4 channels x 2 videos/day)
 
-Automatically writes **Hindi** scripts (with a punchy 5-second hook and a
-complete beginning/middle/end), generates clear Hindi voiceovers, adds
-situational background music that ducks under the voice, sources matching
-background footage, burns in Devanagari subtitles, and sends the finished
-videos straight to you on Telegram — for 4 channels, 2 videos each per day
-(8 total), fully on autopilot, for $0. You download from Telegram and post
-wherever you like.
+Automatically writes **Hindi** scripts (with a mandatory punchy 2-3 second
+hook, a complete beginning/middle/end, and a definitive conclusion), generates
+clear Hindi voiceovers, adds situational background music that ducks under the
+voice, sources matching background footage, burns in Devanagari subtitles, and
+sends the finished videos straight to you on Telegram — for 4 channels, 2
+videos each per day (8 total), fully on autopilot, for $0. You download from
+Telegram and post wherever you like.
 
 ## What it uses (all free)
 | Step | Tool | Cost |
@@ -238,17 +238,20 @@ you can trigger it manually anytime via Actions → "Generate Faceless Reels"
   images, so all scenes share one look), and optional `telegram_chat_id` if
   you want a channel's videos in a separate chat/group. Add a 5th channel?
   Also add it to the `matrix.channel` list in the workflow file.
-- **5-second hook**: the script's `hook` line is spoken first and shown big
-  on screen for the opening seconds (see `build_hook_ass` in
-  `scripts/assemble_video.py`). Edit the prompt in `scripts/generate_script.py`
-  to change what makes a good hook.
+- **2-3 second hook**: the script's `hook` line (5-7 words) is spoken first
+  and shown big on screen for the opening seconds (see `build_hook_ass` in
+  `scripts/assemble_video.py`). It's mandatory - if the model skips it, one is
+  derived from the opening scene, and any hook over 7 words is trimmed. Edit
+  the prompt in `scripts/generate_script.py` to change what makes a good hook.
 - **Audio loudness**: the narrator is compressed and boosted before the final
   `-14 LUFS` loudness pass. `voice_volume` defaults to `1.8` and
   `music_volume` defaults to `0.12`, with sidechain ducking so music stays
   behind the narration. Override with `VOICE_VOLUME` / `TARGET_LUFS` when needed.
 - **Videos per day**: change `matrix.video_index` in the workflow (e.g.
   `[1, 2, 3]` for 3/day/channel).
-- **Video length**: `target_words` in `channels.yaml` (~150 words ≈ 50s spoken).
+- **Video length**: `target_words` in `channels.yaml` - the hard word budget
+  for the whole script (hook + scenes), enforced in `scripts/generate_script.py`
+  (~80 words ≈ 35-40s video).
 - **Schedule/time**: `cron:` in the workflow (UTC).
 - **Subtitle style**: `force_style` in `scripts/assemble_video.py`.
 - **Parallelism**: `max-parallel` in the workflow — controls how many of
@@ -299,7 +302,7 @@ Use `VOICE_VOLUME` or `TARGET_LUFS` only when you have a reason to tune them.
 ## Known limits of the free-tier version
 - AGNES and Pexels free tiers have rate limits — 8 videos/day spread across
   jobs is generally fine; watch for 429s if you push parallelism higher.
-- Telegram bot uploads cap around 50MB — comfortably covers a 45-75s reel;
+- Telegram bot uploads cap around 50MB — comfortably covers a 35-40s reel;
   bigger files fall back to a text alert (grab the file from the GitHub
   Actions run artifacts in that case - each job uploads one automatically).
 - `faster-whisper`'s `small` model (default) is accurate enough for Hindi on

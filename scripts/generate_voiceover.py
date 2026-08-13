@@ -1,16 +1,20 @@
 """
-Step 2: Generate Hindi voiceover audio per scene using edge-tts (free, no API key).
+Step 2: Generate English voiceover audio per scene using edge-tts (free, no API key).
 
 Splits each scene into sentences, synthesizes each separately, and stitches
 them back together with short real-silence gaps for natural pacing. The
-script's 5-second "hook" line is synthesized first and prepended to the full
-track. Finally the whole voiceover gets a clarity EQ pass (cut rumble, boost
+script's ~5 second "hook" line is synthesized first and prepended to the
+full track. Finally the whole voiceover gets a clarity EQ pass (cut rumble, boost
 bass for warmth, boost treble for crispness).
+
+The synthesized full track is the source of truth for the final video length.
+A hard cap rejects any voiceover longer than MAX_VIDEO_SECONDS (40) so no video
+ever exceeds the 35-40 second target window.
 
 Reads: output/script.json, config/channels.yaml
 Writes:
   output/audio/scene_0.mp3, scene_1.mp3, ...  (includes trailing pause)
-  output/audio/hook.mp3      (the 5-second hook line, when script has one)
+  output/audio/hook.mp3      (the ~5 second hook line, when script has one)
   output/audio/full.mp3      (hook + all scenes, EQ'd - consumed by subtitles,
                               music mixing, and final assembly)
   output/audio/durations.json    (scene durations, includes trailing pause -
@@ -184,7 +188,7 @@ def main():
         scene_paths.append(scene_out)
         print(f"[generate_voiceover] scene {i}: {len(sentences)} sentence(s), {dur:.2f}s")
 
-    # 5-second hook: synthesized first, prepended to the full track.
+    # ~5 second hook: synthesized first, prepended to the full track.
     hook_path = os.path.join(AUDIO_DIR, "hook.mp3")
     hook_text = (script.get("hook") or "").strip()
     all_pieces = list(scene_paths)
@@ -217,6 +221,32 @@ def main():
         json.dump(durations, f, indent=2)
 
     full_dur = ffprobe_duration(full_path)
+
+    # Hard gate: the final video runs exactly as long as this track, so the
+    # voiceover must land in the 35-40s window. Fail loudly on either bound
+    # rather than ship a video that is too short or too long; the script is
+    # regenerated (a fresh roll, since temperature=1.0) on the next run.
+    try:
+        min_video_seconds = max(35.0, float(os.environ.get("MIN_VIDEO_SECONDS", "35")))
+    except ValueError:
+        min_video_seconds = 35.0
+    try:
+        max_video_seconds = min(40.0, float(os.environ.get("MAX_VIDEO_SECONDS", "40")))
+    except ValueError:
+        max_video_seconds = 40.0
+    if full_dur > max_video_seconds:
+        raise SystemExit(
+            f"[generate_voiceover] voiceover is {full_dur:.2f}s, exceeds the "
+            f"{max_video_seconds:.0f}s hard cap (35-40s target). Regenerate the "
+            "script with fewer words (lower target_words)."
+        )
+    if full_dur < min_video_seconds:
+        raise SystemExit(
+            f"[generate_voiceover] voiceover is {full_dur:.2f}s, under the "
+            f"{min_video_seconds:.0f}s floor (35-40s target). Regenerate the "
+            "script with more words (raise target_words)."
+        )
+
     print(f"[generate_voiceover] voice={voice} rate={rate} pitch={pitch} "
           f"full={full_dur:.2f}s done")
 

@@ -5,9 +5,10 @@ Uses AGNES (OpenAI-compatible, https://apihub.agnes-ai.com/v1) with the
 agnes-2.0-flash model and thinking mode enabled, so stories get planned
 before they are written. Get a key at https://apihub.agnes-ai.com
 
-All narration is written in Hindi (Devanagari), every script carries a
-punchy 5-second "hook" line, and the prompt enforces a complete three-act
-story arc so videos always have a real beginning and a definitive ending.
+All narration is written in English, every script carries a punchy ~5 second
+"hook" line to grab attention in the first seconds, and the prompt enforces a
+complete three-act story arc (with a mandatory conclusion) so videos always
+have a real beginning, middle, and definitive ending.
 
 Every generated story is checked against the channel's history
 (scripts/history.py -> history/<channel>.json). If the title or topic is too
@@ -38,8 +39,9 @@ Optional env vars:
                   when falling back to Groq)
   LLM_THINKING  - "1" (default) enables the model's thinking/reasoning mode
   LLM_MAX_TOKENS- max output tokens (default 4096)
-  SCRIPT_RETRIES- max regenerate attempts when the LLM repeats a story
-                   (default 3)
+   SCRIPT_RETRIES- max regenerate attempts when the LLM repeats a story
+                    or violates a hard constraint (length/scene-count/
+                    conclusion) (default 5)
   JSON_RETRIES  - max attempts when the LLM returns malformed JSON
                    (default 3)
 """
@@ -100,6 +102,8 @@ def build_prompt(channel, cfg, avoid_lines=None):
     target_words = cfg["video"]["target_words"]
     min_scenes = cfg["video"]["min_scenes"]
     max_scenes = cfg["video"]["max_scenes"]
+    min_words = int(target_words * 0.9)
+    max_words = int(target_words * 1.1)
 
     avoid_section = ""
     if avoid_lines:
@@ -116,14 +120,14 @@ WRITE EVERYTHING IN ENGLISH - the title, the hook, and ALL scene narration must 
 THE STORY MUST BE COMPLETE - a clear BEGINNING, MIDDLE, and END. This is the most important rule. Never start mid-story and never stop mid-story:
 - ACT 1 - OPENING (scene 1): Open in the middle of something intriguing to grab the viewer, then immediately ground the story: who/what/where is this about? Never open with a generic line like "Have you ever wondered..." or "Today we will talk about...".
 - ACT 2 - BUILD (middle scenes): Escalate step by step. Each scene MUST flow naturally from the previous one - no topic jumps, no disconnected facts. Reveal one new layer per scene.
-- ACT 3 - RESOLUTION (final scene): Land the payoff or the twist, then CLOSE with a definitive final line. The ending must feel finished - like the last chapter of a book. Never trail off, never stop mid-thought, never end on an open question. A viewer who watches to the end must feel the story was completely told.
+- ACT 3 - RESOLUTION (final scene): Land the payoff or the twist, then CLOSE with a definitive final line. The ending must feel finished - like the last chapter of a book. Never trail off, never stop mid-thought, never end on an open question. A viewer who watches to the end must feel the story was completely told. THIS CONCLUSION IS MANDATORY - every script must end with a finished, conclusive final scene. The final scene must give a clear takeaway or lesson so the viewer leaves with a satisfying answer.
 
 Rules:
-- Total narration across all scenes: about {target_words} words.
-- Split it into {min_scenes} to {max_scenes} scenes. Each scene is 1-3 sentences, punchy, spoken narration style (no stage directions).
+- Total narration across the WHOLE script (hook + all scenes combined): about {target_words} words. This is a HARD BUDGET - never write more than {max_words} words or fewer than {min_words} words. The narration is timed for a 35-40 second video, so every sentence must be essential - cut filler, adjectives, and repetition.
+- Split it into {min_scenes} to {max_scenes} scenes. Each scene is 1-2 short sentences, punchy, spoken narration style (no stage directions).
 - Keep sentences short and clean (roughly 8-16 words each). Avoid long run-on sentences joined with "and" - break them into separate sentences instead. This matters: the narration is split sentence-by-sentence for pacing, so clean sentence breaks = natural-sounding pauses.
 - Back every claim with a concrete detail: a name, a number, a date, a place, or a specific object. Zero vague filler like "it was amazing" or "the universe is vast" - SHOW the detail. This is what makes a video feel informative.
-- \"hook\": a SEPARATE short line, 8-12 words (spoken in about 5 seconds), that grabs attention in the very first seconds of the video. It should tease the story's most intriguing detail WITHOUT spoiling the ending - e.g. a shocking fact, a question that begs an answer, or a promise of what's coming. This line is shown big on screen and spoken first.
+- \"hook\": a SEPARATE punchy line of 11-13 words (spoken in about 5 seconds) that hooks the viewer in the very first seconds - a shocking fact, a bold claim, or a question that begs an answer, teasing the story's most intriguing detail WITHOUT spoiling the ending. This line is shown big on screen and spoken first. The hook is MANDATORY - always include it, and keep it to 11-13 words so it lands in ~5 seconds.
 - \"title\": a short catchy title (4-8 words).
 - For each scene, also give 2-4 short VISUAL SEARCH KEYWORDS IN ENGLISH (things you could film or find stock footage of) that match what's being said - these feed the image generator, so make them SAFE FOR WORK: describe locations, objects, atmospheres, and clothing - never bodies, skin, or suggestive subjects.
 
@@ -137,7 +141,7 @@ FAMILY-SAFE CONTENT - STRICT AND NON-NEGOTIABLE (these videos are published on Y
 Respond with ONLY valid JSON, no markdown fences, no commentary, in this exact shape:
 {{
   "title": "short catchy title",
-  "hook": "punchy 8-12 word hook line",
+  "hook": "punchy 11-13 word hook line (spoken in ~5 seconds)",
   "scenes": [
     {{"text": "English narration...", "visual_keywords": ["safe", "english", "keywords"]}}
   ]
@@ -314,6 +318,29 @@ def generate_script(prompt):
     raise last_error
 
 
+def narration_word_count(data):
+    """Total spoken words: the hook plus all scene narration. This is what
+    the length budget (35-40s video) is enforced against."""
+    words = sum(len(s.get("text", "").split()) for s in data.get("scenes", []))
+    words += len((data.get("hook") or "").split())
+    return words
+
+
+def has_conclusion(data):
+    """True when the script lands a definitive ending. The conclusion is
+    mandatory - a final scene that trails off, ends mid-sentence, or closes on
+    an open question is rejected so the video never feels unfinished."""
+    scenes = data.get("scenes") or []
+    if not scenes:
+        return False
+    last = (scenes[-1].get("text") or "").strip()
+    if not last:
+        return False
+    if last.endswith(("?", "...", "…")):
+        return False
+    return last[-1] in (".", "!")
+
+
 def story_topic(data):
     """A fingerprint of the story's subject, for dedup comparisons. Uses the
     whole narration (not just scene 1) so reworded retellings are caught."""
@@ -349,13 +376,14 @@ def main():
     cfg = load_config()
     channel = get_channel(cfg)
     try:
-        max_retries = max(1, int(os.environ.get("SCRIPT_RETRIES", "3")))
+        max_retries = max(1, int(os.environ.get("SCRIPT_RETRIES", "8")))
     except ValueError:
-        max_retries = 3
+        max_retries = 8
 
     avoid = history.avoid_list(channel["id"])
     data = None
     last_reason = None
+    min_scenes = cfg["video"]["min_scenes"]
     for attempt in range(1, max_retries + 1):
         prompt = build_prompt(channel, cfg, avoid)
         data = generate_script(prompt)
@@ -388,11 +416,64 @@ def main():
             last_reason = "duplicate"
             continue
 
+        # Conclusion is MANDATORY - reject scripts whose final scene ends on
+        # an open question or trails off, and regenerate with a hint instead
+        # of shipping an unfinished story.
+        if not has_conclusion(data):
+            print(f"[generate_script] final scene does not end with a definitive "
+                  f"conclusion - regenerating ({attempt}/{max_retries})")
+            line = ("- make sure the FINAL scene ends with a definitive concluding "
+                    "line - a finished period or exclamation, never a question "
+                    "mark or '...'")
+            if line not in avoid:
+                avoid.append(line)
+            last_reason = "conclusion"
+            continue
+
+        # Scene-count floor - fewer scenes means fewer pacing pauses, which
+        # drags the video under the 35s floor. Enforce the channel's min so
+        # the spoken length stays in the 35-40s window.
+        if len(data.get("scenes", [])) < min_scenes:
+            print(f"[generate_script] only {len(data['scenes'])} scenes "
+                  f"(need at least {min_scenes}) - regenerating ({attempt}/{max_retries})")
+            line = (f"- split the story into at least {min_scenes} scenes "
+                    f"(you wrote too few)")
+            if line not in avoid:
+                avoid.append(line)
+            last_reason = "scenes"
+            continue
+
+        # Length budget - the model overshoots the soft word target, so enforce
+        # a hard range around it. This is what keeps videos in the 35-40s
+        # window. Off-budget scripts are regenerated with the exact count so
+        # the model knows how much to trim or add.
+        target_words = cfg["video"]["target_words"]
+        min_words = int(target_words * 0.9)
+        max_words = int(target_words * 1.1)
+        word_count = narration_word_count(data)
+        if word_count < min_words or word_count > max_words:
+            print(f"[generate_script] narration is {word_count} words "
+                  f"(need {min_words}-{max_words}) - regenerating ({attempt}/{max_retries})")
+            line = (f"- keep the total narration (hook + all scenes) between "
+                    f"{min_words} and {max_words} words - you wrote {word_count}. "
+                    f"Cut filler and repetition, keep only essential sentences.")
+            if line not in avoid:
+                avoid.append(line)
+            last_reason = "length"
+            continue
+
         # Every video needs a hook - if the model skipped it, derive one from
-        # the opening scene so the 5-second hook overlay/audio always exists.
+        # the opening scene so the ~5 second hook overlay/audio always exists.
         if not data.get("hook"):
             words = " ".join(data["scenes"][0]["text"].split())
-            data["hook"] = " ".join(words.split()[:12])
+            data["hook"] = " ".join(words.split()[:13])
+        else:
+            # Hard cap at 11-13 words so the hook always lands in ~5 seconds
+            # (the channel voices speak roughly 2.3 words/sec). Truncating the
+            # tail of a tease line is safe - it still hooks the viewer.
+            hook_words = data["hook"].split()
+            if len(hook_words) > 13:
+                data["hook"] = " ".join(hook_words[:13])
 
         history.record(channel["id"], data["title"], topic)
         break
@@ -406,6 +487,31 @@ def main():
                 f"[generate_script] {max_retries} attempts all failed the family-safe "
                 "content screen (profanity/obscenity/nudity/gore). Set CONTENT_FILTER=0 "
                 "to disable the screen, or try again later."
+            )
+        # A conclusion is mandatory - never accept a script that ends
+        # unfinished, no matter how many retries it took.
+        if last_reason == "conclusion":
+            raise SystemExit(
+                f"[generate_script] {max_retries} attempts all failed the mandatory "
+                "conclusion check (final scene must end with a definitive line). "
+                "Try again later."
+            )
+        # The length budget is a hard requirement too (35-40s videos) - never
+        # ship a script that would make the video several times too long.
+        if last_reason == "length":
+            target_words = cfg["video"]["target_words"]
+            raise SystemExit(
+                f"[generate_script] {max_retries} attempts all missed the "
+                f"{int(target_words * 0.9)}-{int(target_words * 1.1)} word length "
+                "budget (keeps videos at 35-40s). Try again later."
+            )
+        # Too few scenes is also a hard requirement - it keeps the video in the
+        # 35-40s window, so never ship a script with too few scenes.
+        if last_reason == "scenes":
+            raise SystemExit(
+                f"[generate_script] {max_retries} attempts all produced too few "
+                f"scenes (need at least {min_scenes}; keeps videos at 35-40s). "
+                "Try again later."
             )
         # Exhausted retries on duplicates - accept the last attempt, but don't
         # record it: it is a repeat of an existing entry, so recording would

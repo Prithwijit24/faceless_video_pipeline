@@ -3,7 +3,7 @@ Step 6: Assemble the final vertical video.
 
 For each scene: scale/crop the visual to fill 1080x1920 and trim/loop it to
 match that scene's voiceover duration (photos get a slow Ken Burns zoom).
-A 5-second HOOK clip is prepended (the script's hook line spoken over scene
+A ~5 second HOOK clip is prepended (the script's hook line spoken over scene
 0's visual with the hook text shown big on screen - Devanagari-safe, burned
 via libass for proper Hindi text shaping). Then all clips are concatenated,
 the voiceover is mixed with the background music bed (sidechain ducking: the
@@ -240,7 +240,7 @@ def main():
         clip_paths.append(out_path)
         print(f"[assemble_video] normalized scene {i}")
 
-    # 5-second hook: scene 0's visual + the hook line shown big on screen.
+    # ~5 second hook: scene 0's visual + the hook line shown big on screen.
     hook_path = os.path.join(OUTPUT_DIR, "audio", "hook.mp3")
     hook_clip = None
     if os.path.exists(hook_path) and script.get("hook") and manifest:

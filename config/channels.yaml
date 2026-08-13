@@ -59,7 +59,7 @@ channels:
 # Shared video pacing/output settings across all channels
 video:
   language: "en"                 # narration + subtitle language
-  target_words: 170
+  target_words: 85              # ~85 words (hook + scenes); centers most voices in 35-40s. Hard 35-40s gate in generate_voiceover.py is the absolute guarantee.
   min_scenes: 5
   max_scenes: 8
   resolution: "1080x1920"
