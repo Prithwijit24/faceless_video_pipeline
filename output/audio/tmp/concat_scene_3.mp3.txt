@@ -1,0 +1,4 @@
+file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/tmp/scene_3_sent_0.mp3'
+file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/tmp/sentence_silence.mp3'
+file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/tmp/scene_3_sent_1.mp3'
+file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/tmp/scene_silence.mp3'
