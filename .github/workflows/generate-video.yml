@@ -69,7 +69,7 @@ jobs:
         env:
           CHANNEL_ID: ${{ matrix.channel }}
           VIDEO_INDEX: ${{ matrix.video_index }}
-          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          AGNES_API_KEY: ${{ secrets.AGNES_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           HORDE_IMAGE_API_KEY: ${{ secrets.HORDE_IMAGE_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
