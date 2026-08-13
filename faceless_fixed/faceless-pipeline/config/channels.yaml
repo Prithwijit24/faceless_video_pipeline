@@ -1,0 +1,79 @@
+# One entry per channel. Add/remove channels freely - the workflow matrix
+# (see .github/workflows/generate-video.yml) drives itself off this list's
+# length, so if you add a 5th channel, bump the matrix there too.
+channels:
+  - id: "mythology"
+    display_name: "Mythology Tales"
+    prompt: "a lesser-known myth or legend from world mythology that most people have never heard of"
+    voice: "en-US-AndrewMultilingualNeural"
+    rate: "-2%"
+    pitch: "-8Hz"                 # edge-tts pitch shift - brighter/clearer voice
+    # pauses are deliberately SHORT now - long gaps made older videos drag
+    sentence_pause_ms: 150
+    scene_pause_ms: 250
+    # Freesound search terms for the situational background music (CC0 only)
+    music_query: "epic cinematic ambient"
+    # optional: style suffix appended to each scene's AI image prompt so the
+    # generated backgrounds share one consistent look across the video.
+    visual_style: "dark cinematic folklore art, mystical atmosphere, dramatic moody lighting, ancient artifacts, rich textures, vertical composition, no text"
+    # optional: send this channel's videos to a different Telegram chat
+    # (e.g. a group per channel). Falls back to TELEGRAM_CHAT_ID if omitted.
+    telegram_chat_id: ""
+
+  - id: "horror"
+    display_name: "Late Night Horror"
+    prompt: "a short, spine-chilling story written to feel like a true personal experience"
+    voice: "en-US-BrianMultilingualNeural"
+    rate: "-4%"
+    pitch: "-12Hz"
+    sentence_pause_ms: 100        # a touch more dread, but far less than before
+    scene_pause_ms: 200
+    music_query: "dark ambient drone"
+    visual_style: "dark cinematic horror, eerie unsettling atmosphere, moody low-key lighting, gritty film grain, shadowy figures, vertical composition, no text"
+    telegram_chat_id: ""
+
+  - id: "space"
+    display_name: "Space Oddities"
+    prompt: "a mind-blowing, lesser-known fact about space, astronomy, or the universe"
+    voice: "en-US-ChristopherNeural"   # (DavisNeural doesn't exist in edge-tts)
+    rate: "-2%"
+    pitch: "-8Hz"
+    sentence_pause_ms: 100        # facts move fast - tightest pacing
+    scene_pause_ms: 200
+    music_query: "space ambient atmosphere"
+    visual_style: "awe-inspiring cinematic space photography, vivid nebulas and starfields, dramatic cosmic lighting, ultra detailed, vertical composition, no text"
+    telegram_chat_id: ""
+
+  - id: "psychology"
+    display_name: "Mind Hacks"
+    prompt: "a surprising psychological phenomenon or cognitive bias, explained simply with an example"
+    voice: "en-US-AvaMultilingualNeural"
+    rate: "-2%"
+    pitch: "-12Hz"
+    sentence_pause_ms: 50
+    scene_pause_ms: 100
+    music_query: "calm ambient pad"
+    visual_style: "minimalist cinematic conceptual art, surreal metaphors of the human mind, soft dramatic lighting, elegant composition, vertical composition, no text"
+    telegram_chat_id: ""
+
+# Shared video pacing/output settings across all channels
+video:
+  language: "en"                 # narration + subtitle language
+  target_words: 170
+  min_scenes: 5
+  max_scenes: 8
+  resolution: "1080x1920"
+  videos_per_day_per_channel: 2   # -> 4 channels x 2 = 8 videos/day total
+  sentence_pause_ms: 150          # default silence between sentences within a scene
+  scene_pause_ms: 250             # default extra silence at the end of each scene
+                                  # (a channel can override these with its own
+                                  # sentence_pause_ms / scene_pause_ms keys)
+  default_rate: "-5%"             # used if a channel doesn't set its own "rate"
+  default_pitch: "+10Hz"          # used if a channel doesn't set its own "pitch"
+  # Voice is intentionally kept forward; music is only a bed.
+  music_volume: 0.12
+  voice_volume: 1.8
+  target_lufs: -14
+  visual_safety_threshold: 0.40
+  visual_retries: 3
+  visual_reject_humans: true              # background music gain before ducking under the voice

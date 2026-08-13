@@ -1,0 +1,111 @@
+name: Generate Faceless Reels
+
+on:
+  schedule:
+    # Runs every day at 08:00 UTC. Edit to change the time (cron is UTC).
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "Run only this channel id (leave blank for all channels)"
+        required: false
+        default: ""
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Same-channel jobs run one at a time so the second one restores the first's
+    # freshly-saved story history (otherwise parallel jobs could pick the same
+    # story and overwrite each other's history entry).
+    concurrency:
+      group: story-${{ matrix.channel }}
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      # Keep this low-ish so you don't slam Groq/Pexels free-tier rate
+      # limits with 8 jobs hitting them in the same instant. Raise it if
+      # your free-tier quotas comfortably allow more parallelism.
+      max-parallel: 2
+      matrix:
+        channel: [mythology, horror, space, psychology]
+        video_index: [1, 2]
+
+    steps:
+      - name: Skip if a specific channel was requested and this isn't it
+        if: ${{ github.event.inputs.channel != '' && github.event.inputs.channel != matrix.channel }}
+        run: echo "Skipping ${{ matrix.channel }}" && exit 0
+
+      - name: Checkout repo
+        if: ${{ github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel }}
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: ${{ github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        if: ${{ github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel }}
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto
+
+      - name: Install Python dependencies
+        if: ${{ github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel }}
+        run: pip install -r requirements.txt
+
+      - name: Restore story history
+        if: ${{ github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel }}
+        uses: actions/cache@v4
+        with:
+          path: history
+          key: story-history-${{ matrix.channel }}-${{ github.ref }}
+          restore-keys: |
+            story-history-${{ matrix.channel }}-
+
+
+      - name: Run pipeline
+        if: ${{ github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel }}
+        env:
+          CHANNEL_ID: ${{ matrix.channel }}
+          VIDEO_INDEX: ${{ matrix.video_index }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          HORDE_IMAGE_API_KEY: ${{ secrets.HORDE_IMAGE_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          # Optional: background music from Freesound (CC0). Get a free token
+          # at freesound.org/apiv2/apply/ and add it as a repo secret. If this
+          # secret is missing the env var is empty and the pipeline simply
+          # makes the video with no background music.
+          FREESOUND_API_TOKEN: ${{ secrets.FREESOUND_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # Optional: give each channel its own Telegram bot. Add a secret
+          # named <CHANNEL_ID_UPPER>_TELEGRAM_BOT_TOKEN (e.g.
+          # MYTHOLOGY_TELEGRAM_BOT_TOKEN) per bot. Channels without one fall
+          # back to TELEGRAM_BOT_TOKEN automatically: a missing secret sets an
+          # empty env var, which notify.py treats as "use the shared token".
+          MYTHOLOGY_TELEGRAM_BOT_TOKEN: ${{ secrets.MYTHOLOGY_TELEGRAM_BOT_TOKEN }}
+          HORROR_TELEGRAM_BOT_TOKEN: ${{ secrets.HORROR_TELEGRAM_BOT_TOKEN }}
+          SPACE_TELEGRAM_BOT_TOKEN: ${{ secrets.SPACE_TELEGRAM_BOT_TOKEN }}
+          PSYCHOLOGY_TELEGRAM_BOT_TOKEN: ${{ secrets.PSYCHOLOGY_TELEGRAM_BOT_TOKEN }}
+        run: python scripts/pipeline.py
+
+      - name: Save story history
+        if: always() && (github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel)
+        uses: actions/cache@v4
+        with:
+          path: history
+          key: story-history-${{ matrix.channel }}-${{ github.ref }}
+          save-always: true
+
+
+      - name: Upload video as workflow artifact (backup / manual download)
+        if: always() && (github.event.inputs.channel == '' || github.event.inputs.channel == matrix.channel)
+        uses: actions/upload-artifact@v4
+        with:
+          name: reel-${{ matrix.channel }}-${{ matrix.video_index }}-${{ github.run_id }}
+          path: |
+            output/final.mp4
+            output/script.json
+          retention-days: 7
