@@ -8,7 +8,10 @@ flags are useful defense-in-depth, but they are not treated as guarantees.
 Policy:
 - NudeNet is mandatory. If it cannot be imported/initialized, the visual step
   FAILS CLOSED.
-- Exposed genitalia, breasts, buttocks, anus, belly, or armpits are rejected.
+- Exposed genitalia, breasts, buttocks, and anus are rejected.
+- Belly/armpits (NudeNet's noisiest classes - they fire on midriffs, clothing
+  folds, shadows, and figure silhouettes) are only rejected above a higher,
+  tunable threshold, so a false positive can't silently kill a whole video.
 - Human faces/bodies are rejected by default. Faceless videos therefore use
   environments, objects, landscapes, architecture, symbols, and abstract art.
 - Video fallbacks are sampled at multiple timestamps and every sampled frame
@@ -26,19 +29,32 @@ from functools import lru_cache
 # borderline material at the cost of rejecting more false positives.
 NSFW_SCORE_THRESHOLD = float(os.environ.get("VISUAL_SAFETY_THRESHOLD", "0.40"))
 
+# NudeNet's BELLY/ARMPITS classes are by far the noisiest: they fire on
+# midriffs, loose clothing folds, shadows, and figure silhouettes - which has
+# blocked whole videos over harmless frames (e.g. a horror channel's shadowy
+# figure scoring BELLY_EXPOSED 0.48). They are still screened, but only block
+# above this higher bar; the strict nudity classes below block at
+# VISUAL_SAFETY_THRESHOLD. Tune with VISUAL_SOFT_THRESHOLD.
+SOFT_LABEL_THRESHOLD = float(os.environ.get("VISUAL_SOFT_THRESHOLD", "0.60"))
+
 # We reject human subjects entirely. This is stronger than merely checking for
 # nudity and dramatically reduces the chance of sexualized/obscene imagery.
 REJECT_HUMANS = os.environ.get("VISUAL_REJECT_HUMANS", "1").lower() not in (
     "0", "false", "no"
 )
 
-UNSAFE_LABELS = {
+# Strict nudity classes: always rejected at NSFW_SCORE_THRESHOLD.
+STRICT_UNSAFE_LABELS = {
     "FEMALE_BREAST_EXPOSED",
     "MALE_BREAST_EXPOSED",
     "FEMALE_GENITALIA_EXPOSED",
     "MALE_GENITALIA_EXPOSED",
     "ANUS_EXPOSED",
     "BUTTOCKS_EXPOSED",
+}
+
+# Soft/racy classes: only rejected above SOFT_LABEL_THRESHOLD.
+SOFT_UNSAFE_LABELS = {
     "BELLY_EXPOSED",
     "ARMPITS_EXPOSED",
 }
@@ -91,7 +107,9 @@ def check_image(path: str) -> tuple[bool, list[str]]:
     for item in detections or []:
         label = str(item.get("class") or item.get("label") or "").upper()
         score = float(item.get("score", 0.0))
-        if label in UNSAFE_LABELS and score >= NSFW_SCORE_THRESHOLD:
+        if label in STRICT_UNSAFE_LABELS and score >= NSFW_SCORE_THRESHOLD:
+            reasons.append(f"{label}:{score:.2f}")
+        if label in SOFT_UNSAFE_LABELS and score >= SOFT_LABEL_THRESHOLD:
             reasons.append(f"{label}:{score:.2f}")
         if REJECT_HUMANS and label in HUMAN_LABELS and score >= NSFW_SCORE_THRESHOLD:
             reasons.append(f"{label}:{score:.2f}")

@@ -71,8 +71,8 @@ video:
   default_rate: "-5%"             # used if a channel doesn't set its own "rate"
   default_pitch: "+10Hz"          # used if a channel doesn't set its own "pitch"
   # Voice is intentionally kept forward; music is only a bed.
-  music_volume: 0.12
-  voice_volume: 1.8
+  music_volume: 0.25
+  voice_volume: 5
   target_lufs: -14
   visual_safety_threshold: 0.40
   visual_retries: 3

@@ -17,6 +17,13 @@ Writes:
                                    consumed as-is by fetch_visuals.py /
                                    assemble_video.py; the hook is NOT listed
                                    here, assemble_video probes hook.mp3 itself)
+
+Optional env vars:
+  TTS_VOICE   - override the channel's edge-tts voice
+  TTS_RATE    - override the channel's speaking rate (e.g. "-4%")
+  TTS_PITCH   - override the channel's pitch shift (e.g. "-12Hz")
+  TTS_RETRIES - max attempts per sentence when edge-tts drops a synthesis
+                (default 3; the service is free and transiently flaky)
 """
 import env  # loads .env from the project root via python-dotenv (no-op if missing)
 
@@ -38,6 +45,10 @@ CONFIG_PATH = os.path.join(ROOT, "config", "channels.yaml")
 VOICE_OVERRIDE = os.environ.get("TTS_VOICE")
 RATE_OVERRIDE = os.environ.get("TTS_RATE")
 PITCH_OVERRIDE = os.environ.get("TTS_PITCH")
+try:
+    TTS_RETRIES = max(1, int(os.environ.get("TTS_RETRIES", "3")))
+except ValueError:
+    TTS_RETRIES = 3  # malformed env value - keep the default
 
 
 def ffprobe_duration(path):
@@ -80,8 +91,24 @@ def split_sentences(text):
 
 
 async def synth(text, voice, rate, pitch, out_path):
-    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
-    await communicate.save(out_path)
+    """Synthesize one sentence with edge-tts. edge-tts is a free service and
+    occasionally drops a synthesis (NoAudioReceived / connection resets) -
+    retry with a short backoff instead of failing the whole video over one
+    sentence. Tune with TTS_RETRIES."""
+    last_exc = None
+    for attempt in range(1, TTS_RETRIES + 1):
+        try:
+            communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
+            await communicate.save(out_path)
+            return
+        except Exception as exc:
+            last_exc = exc
+            if attempt < TTS_RETRIES:
+                wait = 2 * attempt
+                print(f"[generate_voiceover] edge-tts attempt {attempt}/{TTS_RETRIES} "
+                      f"failed ({type(exc).__name__}: {exc}) - retrying in {wait}s")
+                await asyncio.sleep(wait)
+    raise last_exc
 
 
 def make_silence(path, duration_ms):

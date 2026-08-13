@@ -158,29 +158,140 @@ def clean_json(raw):
     return raw
 
 
+# A JSON string literal (escaped quotes/backslashes handled), used to salvage
+# fields out of otherwise-broken model output.
+_JSON_STRING = r'"((?:[^"\\]|\\.)*)"'
+
+
+def _decode_json_string(fragment):
+    """Properly unescape a captured JSON string fragment (escapes like
+    newline or unicode are decoded)."""
+    return json.loads('"' + fragment + '"')
+
+
+def _is_script(data):
+    """True when a parsed value has the bare minimum script shape (a title
+    and at least one scene). Anything else is treated as unparseable so the
+    model gets another chance."""
+    return (
+        isinstance(data, dict)
+        and isinstance(data.get("title"), str)
+        and bool(data["title"].strip())
+        and isinstance(data.get("scenes"), list)
+        and bool(data["scenes"])
+    )
+
+
+def _salvage_script(content):
+    """Last-resort recovery: pull title/hook/scenes out of broken JSON with
+    regexes, keyed on the exact schema the prompt requests. This recovers
+    from common LLM slip-ups like a missing comma ("Expecting ',' delimiter")
+    or one corrupted field - no model round-trip needed. Returns a script dict
+    on success, or None when the output is too broken to trust."""
+    def grab(key):
+        m = re.search(r'"' + re.escape(key) + r'"\s*:\s*' + _JSON_STRING, content)
+        return _decode_json_string(m.group(1)) if m else None
+
+    title = grab("title")
+    hook = grab("hook")
+    texts = re.findall(r'"text"\s*:\s*' + _JSON_STRING, content)
+    arrays = re.findall(r'"visual_keywords"\s*:\s*\[(.*?)\]', content, re.DOTALL)
+
+    # Reject garbage/severely truncated replies: a salvage needs at least a
+    # mini three-scene arc, otherwise it's better to re-roll with the model.
+    if not title or len(texts) < 3:
+        return None
+
+    scenes = []
+    for i, text in enumerate(texts):
+        keywords = []
+        if i < len(arrays):
+            keywords = [
+                _decode_json_string(k) for k in re.findall(_JSON_STRING, arrays[i])
+            ]
+        scenes.append({"text": text, "visual_keywords": keywords})
+
+    data = {"title": title, "scenes": scenes}
+    if hook:
+        data["hook"] = hook
+    return data
+
+
+def parse_script_json(content):
+    """Parse the model's reply as the script JSON, tolerating the common LLM
+    slip-ups (markdown fences, stray prose, trailing commas, missing commas,
+    one broken field) before giving up. Returns the script dict; raises
+    json.JSONDecodeError when the output cannot be salvaged."""
+    cleaned = clean_json(content)
+
+    # 1) Plain parse of the cleaned text.
+    try:
+        data = json.loads(cleaned)
+        if _is_script(data):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    # 2) Tolerate trailing commas (a very common LLM slip).
+    try:
+        fixed = re.sub(r",\s*([}\]])$", r"\1", cleaned, flags=re.MULTILINE)
+        if fixed != cleaned:
+            data = json.loads(fixed)
+            if _is_script(data):
+                return data
+    except json.JSONDecodeError:
+        pass
+
+    # 3) Last resort: regex salvage of the known schema (handles missing
+    #    commas like the "Expecting ',' delimiter" failures).
+    data = _salvage_script(cleaned)
+    if data is not None:
+        return data
+
+    raise json.JSONDecodeError("model output is not valid script JSON", cleaned, 0)
+
+
 def generate_script(prompt):
     """Call the LLM (AGNES by default) and return the parsed script dict.
-    Retries on malformed JSON (the model occasionally emits a stray
-    character); raises the last parse error if every attempt is unparseable."""
+    Retries on malformed JSON; each retry feeds the failed output back to the
+    model with the parse error so it can fix the formatting instead of
+    re-rolling the same mistake. Raises the last parse error if every attempt
+    is unparseable."""
     try:
         retries = max(1, int(os.environ.get("JSON_RETRIES", "3")))
     except ValueError:
         retries = 3
 
-    payload = {
-        "model": LLM_MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 1.0,
-        "max_tokens": LLM_MAX_TOKENS,
-    }
-    # Thinking/reasoning mode. AGNES documents chat_template_kwargs.enable_thinking;
-    # a top-level "thinking": true is also accepted. Skip for plain Groq.
-    if LLM_THINKING and "groq" not in LLM_BASE_URL.lower():
-        payload["chat_template_kwargs"] = {"enable_thinking": True}
-        payload["thinking"] = True
-
     last_error = None
+    last_content = None
     for attempt in range(1, retries + 1):
+        messages = [{"role": "user", "content": prompt}]
+        if last_content is not None:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Your previous reply was not valid JSON "
+                    f"(parse error: {last_error}). It was:\n\n"
+                    f"{last_content[:2000]}\n\n"
+                    "Fix ONLY the JSON formatting errors (missing commas, stray "
+                    "characters, truncation) and reply with ONLY the corrected "
+                    "JSON in the exact shape from the original request - no "
+                    "markdown fences, no commentary, no extra text."
+                ),
+            })
+
+        payload = {
+            "model": LLM_MODEL,
+            "messages": messages,
+            "temperature": 1.0,
+            "max_tokens": LLM_MAX_TOKENS,
+        }
+        # Thinking/reasoning mode. AGNES documents chat_template_kwargs.enable_thinking;
+        # a top-level "thinking": true is also accepted. Skip for plain Groq.
+        if LLM_THINKING and "groq" not in LLM_BASE_URL.lower():
+            payload["chat_template_kwargs"] = {"enable_thinking": True}
+            payload["thinking"] = True
+
         resp = requests.post(
             f"{LLM_BASE_URL.rstrip('/')}/chat/completions",
             headers={
@@ -193,9 +304,10 @@ def generate_script(prompt):
         resp.raise_for_status()
         content = resp.json()["choices"][0]["message"].get("content") or ""
         try:
-            return json.loads(clean_json(content))
+            return parse_script_json(content)
         except json.JSONDecodeError as e:
             last_error = e
+            last_content = content
             if attempt < retries:
                 print(f"[generate_script] malformed JSON from model "
                       f"(attempt {attempt}/{retries}) - retrying")

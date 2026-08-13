@@ -131,8 +131,17 @@ export SCRIPT_RETRIES="3"
 
 # optional - voiceover/subtitle tuning (defaults are already good for Hindi)
 # export TTS_PITCH="+10Hz"     # override the channel's edge-tts pitch shift
+# export TTS_RETRIES="3"       # edge-tts attempts per sentence before giving up
+#                              # (the free service is transiently flaky - it
+#                              # retries automatically with a short backoff)
 # export WHISPER_MODEL="small" # subtitle model: base (fast) / small (accurate)
 # export WHISPER_LANGUAGE="hi" # set empty to auto-detect
+
+# optional - visual safety wall tuning
+# export VISUAL_SAFETY_THRESHOLD="0.40" # strict nudity classes (genitalia,
+#                                        # breast, buttocks, anus)
+# export VISUAL_SOFT_THRESHOLD="0.60"   # noisy belly/armpit classes (raises
+#                                        # the bar to cut false positives)
 ```
 (Windows PowerShell: use `$env:AGNES_API_KEY="..."` instead of `export`.)
 
@@ -263,8 +272,12 @@ it can reach the final video.
   receive their provider-level SFW controls.
 - **Local visual screening**: `scripts/image_safety.py` uses NudeNet to inspect
   every AI image and every Pexels fallback. Exposed breasts/genitals/buttocks/
-  anus/belly/armpits are rejected. By default, detected human faces are also
-  rejected, which gives the faceless pipeline a much stronger safety margin.
+  anus are rejected outright. Belly/armpits (NudeNet's noisiest classes, which
+  false-positive on midriffs, clothing folds, shadows, and silhouettes) are only
+  rejected above a higher bar (`VISUAL_SOFT_THRESHOLD`, default 0.60) so one
+  noisy detection can't silently kill a whole video. By default, detected
+  human faces are also rejected, which gives the faceless pipeline a much
+  stronger safety margin.
 - **Video screening**: Pexels video fallbacks are sampled across their duration
   and every sampled frame must pass. `assemble_video.py` then screens the
   assembled video and the final `output/final.mp4` again before declaring it
