@@ -1,7 +1,0 @@
-file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/hook.mp3'
-file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/scene_0.mp3'
-file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/scene_1.mp3'
-file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/scene_2.mp3'
-file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/scene_3.mp3'
-file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/scene_4.mp3'
-file '/home/prithwijit/programming/python/imp_projects/faceless_video_pipeline/faceless_fixed/faceless-pipeline/output/audio/scene_5.mp3'
